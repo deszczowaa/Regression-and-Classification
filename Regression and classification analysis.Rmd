@@ -1,0 +1,1124 @@
+---
+title: "Project regresji i klasyfikacji"
+output:
+  html_document: default
+  pdf_document: default
+date: "2021/2022"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Statystyka Wielowymiarowa
+
+Maja Szrubarczyk, Jakub Skulski
+
+Projekt dotyczy wieloetapowej analizy danych pod kątem klasyfikacji oraz regresji. W projekcie porównano metody klasyfikacji (Regresja logistyczna, LDA, QDA, kNN), wykonano zadanie selekcji cech oraz regularyzacji, a także zgłębiono modele drzew decyzyjnych oraz lasów losowych.
+
+## Przygotowanie danych
+
+Załadowanie danych:
+
+```{r}
+data <- read.csv("data_with_class.csv", header=TRUE, stringsAsFactors=FALSE)
+head(data)
+attach(data)
+```
+
+Dane przedstawiają oczekiwaną średnią długość lat życia w różnych krajach (Life.expectancy). Life.expectancy jest zmienną docelowa dla regresji liniowej. Stworzono zmienną age_group, która będzie służyć do klasyfikacji (4 klasy).
+
+```{r}
+dim(data)
+names(data)
+```
+
+Dane zawierają 387 rekordów, które są opisane przez 24 atrybuty. Do zadań klasyfikacji i regresji niepotrzebne będą kolumny opisujące numer, kraj oraz rok obserwacji.
+
+Wyjaśnienie poszczególnych atrybutów:
+
+-   Status - kraj o statusie: Developing - "Rozwijający się" oraz Developed - "Rozwinięty
+
+-   Life.expectancy - przewidywana długość życia w latach
+
+-   Adult.Mortality - ilość zgonów osób w wieku 15-60 lat na 1000 osób dla obu płci
+
+-   infant.deaths - liczba zgonów wśród dzieci na 1000 osób
+
+-   Alcohol - komsumpcja czystego alkoholu (litry)
+
+-   percentage.expenditure - wydatki na zdrowie w stosunku do produktu krajowego brutto (%)
+
+-   Hepatitis.B, Polio, Diphtheria - odporność na tę chorobę (dzięki szczepionkom) wśród dzieci (%)
+
+-   Measles - liczba zachorowań na 1000 osób
+
+-   BMI - średnia wartość indeksu BMI
+
+-   under.five.deaths - liczba zgonów dzieci poniżej 5 roku życia na 1000 osób
+
+-   Total.expenditure - rządowe wydatki na służbę zdrowia w stosunku do wszystkich wydatków (%)
+
+-   HIV.AIDS - liczba zgonów na 1000 urodzeń u osób z tą chorobą (wiek 0-4 lata)
+
+-   GDP - produkt krajowy brutto
+
+-   Population - populacja kraju
+
+-   thinness.1.19.years oraz thinness.5.9.years - występowanie chudości u dzieci i nastolatków w podanych przedziałach wiekowych
+
+-   Income.composition.of.resources - Wskaźnik rozwoju społecznego (HDI - [0,1])
+
+-   Schooling - liczba lat spędzanych w szkole
+
+-   age_group - 4 klasy wiekowe: 35-50, 50-65, 65-80 oraz 80+ (lata życia).
+
+```{r}
+drop <-c("X", "Country", "Year")
+newdata = data[,!(names(data) %in% drop)]
+dim(newdata)
+head(newdata)
+```
+
+Finalne dane zawierają 387 rekordów opisanych przez 21 atrybutów (w tym dwie zmienne docelowe).
+
+```{r}
+str(newdata)
+detach(data)
+attach(newdata)
+```
+
+Podział danych na zbiór uczący i testowy:
+
+Podział zbioru danych na dane treningowe i testowe (80%:20%).
+
+```{r}
+set.seed(1)
+row.number <- sample(1:nrow(newdata), 0.8*nrow(newdata))
+train = newdata[row.number,]
+test = newdata[-row.number,]
+dim(train)
+dim(test)
+```
+
+```{r}
+```
+
+Wizualizacja korelacji pomiędzy atybutami, pokazuje, że najsilniejsze korelacje z Life.expectancy wykazują Adult.Mortality (związek ujemny) oraz Schooling (związek dodatni).
+
+```{r}
+library(corrplot)
+correlations <- cor(newdata[,2:20])
+corrplot(correlations, method = 'number', tl.cex = 0.47, addCoef.col ='black', number.cex = 0.49)
+```
+
+Poniżej ukazane zostały wykresy przedstawiające związki cech o najsilniejszej korelacji z cechą Life.expectancy. Adult.Mortality oraz HIV.AIDS wykazują silny związek ujemny, a Schooling i Income.composition.of.resources dodatni.
+
+```{r}
+plot(Adult.Mortality, Life.expectancy)
+plot(Schooling, Life.expectancy)
+plot(HIV.AIDS, Life.expectancy)
+plot(Income.composition.of.resources, Life.expectancy)
+```
+
+## Metody regresji
+
+### Regresja liniowa
+
+Najpierw przyjrzyjmy się pojedynczemu modelowi regresji (związek między Life.expectancy a Adult.Mortality).
+
+```{r}
+reg <- lm(Life.expectancy ~ Adult.Mortality, data = train)
+```
+
+```{r}
+coef(reg)
+```
+
+```{r}
+summary(reg)
+```
+
+Obliczanie przedziałów ufności dla współczynników regresji:
+
+```{r}
+confint(reg)
+```
+
+Obliczanie przedziałów ufności dla predykcji:
+
+```{r}
+head(predict(reg, data.frame(Life.expectancy = c(5, 10, 15)), interval = "confidence"))
+```
+
+```{r}
+head(predict(reg, data.frame(Life.expectancy = c(5, 10, 15)), interval = "prediction"))
+```
+
+Wykres regresji liniowej:
+
+```{r}
+plot(train$Adult.Mortality, train$Life.expectancy)
+abline(reg, col = "red", lwd = 2)
+```
+
+Związek pomiędzy śmiertelnością u osób dorosłych a oczekiwaną długością życia jest ujemny.
+
+Wykres przewidywanych wartości vs rzeczywistych (Life.expectancy):
+
+```{r}
+plot(predict(reg),                              
+     train$Life.expectancy,
+     xlab = "Predicted Values",
+     ylab = "Observed Values")
+abline(a = 0,                                        
+       b = 1,
+       col = "red",
+       lwd = 2)
+```
+
+Można zaobserwować poprawność modelu, chociaż wiele przewidywanych wartości odbiega od wartości rzeczywistych.
+
+Identyfikacja obserwacji wpływowych (statystyka leverage):
+
+```{r}
+plot(hatvalues(reg))
+which.max(hatvalues(reg))
+```
+
+### Regresja wielokrotna
+
+W następnym modelu wykorzystamy wszystkie predyktory, aby móc ustalić, które najistotniej przyczyniają się do wyjaśnienia wariancji danych.
+
+```{r}
+reg_all <- lm(Life.expectancy ~ . -age_group, data = train)
+summary(reg_all)
+```
+
+```{r}
+plot(predict(reg_all),                              
+     train$Life.expectancy,
+     xlab = "Predicted Values",
+     ylab = "Observed Values")
+abline(a = 0,                                        
+       b = 1,
+       col = "red",
+       lwd = 2)
+```
+
+W powyższym modelu wykorzystano wszystkie możliwe parametry. Jak widać wartość Multiple R-Squared oraz Adjusted R-Squared jest wyższa w tym modelu niż w takim, gdzie jako predyktor użyto tylko Adult.Mortality. Jest to zatem model, który lepiej dopasowuje się do danych.
+
+Z powyższego podsumowania wynika, że najbardziej znacżacymi zmiennymi jest Adult.Mortality (tak jak przewidywano), HIV.AIDS, Income.composition.of.resources oraz Schooling.
+
+Stworzymy model, w którym zawarte zostaną tylko te zmienne.
+
+```{r}
+reg_multi<-lm(Life.expectancy ~ Adult.Mortality + HIV.AIDS + Income.composition.of.resources + Schooling, data = train)
+summary(reg_multi)
+```
+
+Wykres przewidywanych wartości vs rzeczywistych wartości.
+
+```{r}
+plot(predict(reg_multi),                              
+     train$Life.expectancy,
+     xlab = "Predicted Values",
+     ylab = "Observed Values")
+abline(a = 0,                                        
+       b = 1,
+       col = "red",
+       lwd = 2)
+```
+
+Jak widać, ten model zapewnił większą zbieżność wyników niż w przypadku użycia tylko zmiennej Adult.Mortality. W porównaniu do modelu, gdzie użyto wszystkich predyktorów, Residual Standard Error jest większy, a R-Squared mniejszy. Oznacza to, że dopasowanie modelu z wybranymi predyktorami jest nieznacznie gorsze.
+
+```{r}
+reg_multipred <- predict(reg_multi, newdata = test)
+rmse <- sqrt(sum((exp(reg_multipred) - test$Life.expectancy)^2)/length(test$Life.expectancy))
+c(RMSE = rmse, R2=summary(reg_multi)$r.squared)
+```
+
+```{r}
+plot(reg_multipred, test$Life.expectancy, xlab = "Predicted Values", ylab = "Observed Values")
+```
+
+## Metody klsyfikacji
+
+### Regresja logistyczna
+
+```{r}
+log <- list()
+log$model <- nnet::multinom(age_group ~. -Life.expectancy, data = train)
+summary(log$model)
+```
+
+Po stworzeniu modelu sprawdzimy, jakie klasy przewiduje.
+
+```{r}
+log$pred <- predict(log$model, newdata = train, "class")
+log$tabtrain <-table(Actual = train$age_group, Predicted = log$pred)
+log$tabtrain
+```
+
+Macierz pomyłek pokazuje, że na zbiorze uczącym 27 przypadków zostało sklasyfikowanych nieprawidłowo na 309. To daje skuteczność modelu dla poszczególnych klas oraz dla całego modelu:
+
+```{r}
+(sum(diag(log$tabtrain))/sum(log$tabtrain))*100
+
+```
+
+Skuteczność wyniosła 91.26 %, co jest bardzo wysokim wynikiem. Aby sprawdzić rzeczywistą skuteczność modelu należy zweryfikować predykcje na zbiorze testowym.
+
+```{r}
+log$testpred <- predict(log$model, newdata = test, "class")
+log$tabtest <-table(Actual = test$age_group, Predicted = log$testpred)
+log$tabtest
+```
+
+```{r}
+log$acc <- (sum(diag(log$tabtest))/sum(log$tabtest))*100
+log$acc
+```
+
+Weryfikacja predykcji na zbiorze testowym dała skuteczność 84.62%. Jak widać model osiąga całkiem dobrą skuteczność także na danych, których nie widział wcześniej.
+
+Czy jest możliwość, aby poprawić skuteczność modelu? Spróbujmy wyeliminować najsłabsze predyktory.
+
+```{r}
+cor(newdata[2:20], newdata$Life.expectancy)
+```
+
+Po zobrazowaniu korelacji między zmienną Life.expectancy a wszystkimi zmiennymi, można wnioskować, że najmniej do modelu przyczynią się predyktory Measles, infant.deaths, under.five.deaths, Total.expenditure oraz Population.
+
+```{r}
+log$model2 <- nnet::multinom(age_group ~ . - (Life.expectancy + Measles + infant.deaths + under.five.deaths + Total.expenditure + Population), data = train)
+summary(log$model2)
+```
+
+```{r}
+log$pred2 <- predict(log$model, newdata = train, "class")
+log$tabtrain2 <-table(Actual = train$age_group, Predicted = log$pred2)
+log$tabtrain2
+```
+
+```{r}
+(sum(diag(log$tabtrain2))/sum(log$tabtrain2))*100
+
+```
+
+Po usunięciu zbędnych predyktorów model na zbiorze treningowym osiąga mniejszą skuteczność.
+
+```{r}
+log$testpred2 <- predict(log$model2, newdata = test, "class")
+log$tabtest2 <-table(Actual = test$age_group, Predicted = log$testpred2)
+log$tabtest2
+```
+
+```{r}
+log$acc2 <- (sum(diag(log$tabtest2))/sum(log$tabtest2))*100
+log$acc2
+```
+
+Na nowo poznanych danych ze zbioru testowego model osiągnął skuteczność 87.18 %. Usunięcie zbędnych predyktorów podczas definiowania modelu przyczyniło się do poprawy jego skuteczności.
+
+### LDA - Liniowa Analiza Dyskryminacyjna
+
+```{r}
+library(MASS)
+lda <- list()
+lda$model <- lda(age_group ~ . - (Life.expectancy + age_group), data = train)
+lda$model
+```
+
+```{r}
+lda$pred <- predict(lda$model, newdata = train)
+lda$tabtrain <- table(Actual = train$age_group, Predicted = lda$pred$class)
+lda$tabtrain
+```
+
+```{r}
+(sum(diag(lda$tabtrain))/sum(lda$tabtrain))*100
+
+```
+
+Skuteczność modelu na danych treningowych wyniosła 83.5%.
+
+```{r}
+lda$testpred <- predict(lda$model, newdata = test)
+lda$tabtest <- table(Actual = test$age_group, Predicted = lda$testpred$class)
+lda$tabtest
+```
+
+```{r}
+lda$acc <- (sum(diag(lda$tabtest))/sum(lda$tabtest))*100
+lda$acc
+```
+
+Model osiągnął lepszy wynik w klasyfikacji na danych testowych. Sprawdźmy, czy skuteczność modelu wzrośnie po usunięciu zbędnych predyktorów z poprzedniego modelu.
+
+```{r}
+lda$model2 <- lda(age_group ~ . - (Life.expectancy + age_group + Measles + infant.deaths + under.five.deaths + Total.expenditure + Population), data = train)
+lda$model2
+```
+
+```{r}
+lda$pred2 <- predict(lda$model2, newdata = train)
+lda$tabtrain2 <- table(Actual = train$age_group, Predicted = lda$pred2$class)
+lda$tabtrain2
+```
+
+```{r}
+(sum(diag(lda$tabtrain2))/sum(lda$tabtrain2))*100
+```
+
+```{r}
+lda$testpred2 <- predict(lda$model2, newdata = test)
+lda$tabtest2 <- table(Actual = test$age_group, Predicted = lda$testpred2$class)
+lda$tabtest2
+```
+
+```{r}
+lda$acc2 <- (sum(diag(lda$tabtest2))/sum(lda$tabtest2))*100
+lda$acc2
+```
+
+Usunięcie zbędnych predyktorów z modelu wpłynęło na wzrost skuteczności modelu (wzrost skuteczności o 3% na danych testowych).
+
+### QDA - Kwadratowa Analiza Dyskryminacyjna
+
+Metoda QDA nie jest możliwa do przeprowadzenia na tym zbiorze - nie posiada on wystarczająco dużo danych, żeby nasycić modeldoes not work here. Essentially there is not enough data to fit a quadratic model.
+
+### Metoda kNN
+
+```{r}
+knn <- list()
+knn$drop <-c("Life.expectancy", "Status")
+knn$dataset = newdata[,!(names(newdata) %in% knn$drop)]
+dim(knn$dataset)
+
+```
+
+```{r}
+set.seed(1)
+library(class)
+row.number <- sample(1:nrow(knn$dataset), 0.8*nrow(knn$dataset))
+knn$train <- knn$dataset[row.number,1:18]
+knn$test <- knn$dataset[-row.number,1:18]
+dim(knn$train)
+dim(knn$test)
+age_group_train <- knn$dataset[row.number,19]
+age_group_test <- knn$dataset[-row.number,19]
+knn$pred1 <- knn(train = knn$train, test = knn$test,cl = age_group_train, k = 1)
+knn$tab1 <-table(Actual = age_group_test, Predicted = knn$pred1)
+knn$tab1
+knn$acc1 <- (sum(diag(knn$tab1))/sum(knn$tab1))*100
+knn$acc1
+```
+
+```{r}
+knn$pred3 <- knn(train = knn$train, test = knn$test,cl = age_group_train, k = 3)
+knn$tab3 <-table(Actual = age_group_test, Predicted = knn$pred3)
+knn$tab3
+knn$acc3 <- (sum(diag(knn$tab3))/sum(knn$tab3))*100
+knn$acc3
+```
+
+```{r}
+knn$pred5 <- knn(train = knn$train, test = knn$test,cl = age_group_train, k = 5)
+knn$tab5 <-table(Actual = age_group_test, Predicted = knn$pred5)
+knn$tab5
+knn$acc5 <- (sum(diag(knn$tab5))/sum(knn$tab5))*100
+knn$acc5
+```
+
+```{r}
+knn$pred7 <- knn(train = knn$train, test = knn$test,cl = age_group_train, k = 7)
+knn$tab7 <-table(Actual = age_group_test, Predicted = knn$pred7)
+knn$tab7
+knn$acc7 <- (sum(diag(knn$tab7))/sum(knn$tab7))*100
+knn$acc7
+```
+
+```{r}
+knn$pred10 <- knn(train = knn$train, test = knn$test,cl = age_group_train, k = 10)
+knn$tab10 <-table(Actual = age_group_test, Predicted = knn$pred10)
+knn$tab10
+knn$acc10 <- (sum(diag(knn$tab10))/sum(knn$tab10))*100
+knn$acc10
+```
+
+Tabela przedstawiająca porównanie wyników poszczególnych metod klasyfikacji (skuteczność). Modele regresji logistyczna 2 oraz Lda 2 zostały stworzone dla zredukowanej liczby predyktorów, dla których korelacja z Life.expectancy wahała się w przedziale [-0.2,0.2]: Measles, infant.deaths, under.five.deaths, Total.expenditure oraz Population.
+
+```{r}
+tab <- matrix(c(log$acc, log$acc2, lda$acc, lda$acc2, 0, knn$acc1, knn$acc3, knn$acc5, knn$acc7, knn$acc10), ncol=1, byrow=TRUE)
+colnames(tab) <- c("Skuteczność [%]")
+rownames(tab) <- c('Regresja Logistyczna 1', 'Regresja Logistyczna 2', 'LDA 1', 'LDA 2', 'Qda', 'kNN, k = 1', 'kNN, k = 3', 'kNN, k = 5', 'kNN, k = 7','kNN, k = 10')
+tab <- as.table(tab)
+tab
+```
+
+Najlepsze wyniki uzyskały modele LDA 2 oraz Regresja Logistyczna 2, w których uwzględnione zostały tylko niezbędne predyktory. Dla metody kNN najlepszym parametrem była liczba 7 sąsiadów, gdyż dla większej liczby sąsiadów skuteczność zaczynała maleć.
+
+## Selekcja cech
+
+```{r}
+newdata <-na.omit(newdata)
+dim(newdata)
+```
+
+Po usunięciu wierszy, które zawierają wartości NA można przystąpić do wyboru najlepszego podzbioru.
+
+Zbiór zawiera 21 atrybutów, z czego Life.expectancy należy wskazać, a age_group wykluczamy (klasy do klasyfikacji), zatem używamy modeli o maksymalnej liczbie cech 19.
+
+### Wybór najlepszego podzbioru
+
+```{r}
+library(leaps)
+selection <- regsubsets(Life.expectancy ~. -age_group, data = newdata, nvmax = 19)
+selection <- summary(selection)
+selection
+```
+
+Najczęściej użytym predyktorem w podzbiorach jest Adult.Mortality oraz Schooling, a predyktory thinness..1.19.years oraz Total.expenditure wykorzystano najmniej razy.
+
+Sprawdżmy, które podzbiory są najlepsze według różnych kryteriów:
+
+-   miara Cp:
+
+```{r}
+selection$cp
+
+selection$cpmin <- which.min(selection$cp)
+selection$cpmin
+
+selection$cp[selection$cpmin]
+
+```
+
+Według miary Cp najlepszym podzbiorem jest zbiór 11, gdzie użyte zostało 11 cech.
+
+```{r}
+plot(selection$cp, xlab = "Liczba zmiennych", ylab = "Cp", col = "green",
+     type = "b", pch = 20)
+points(selection$cpmin, selection$cp[selection$cpmin], col = "red", pch = 9)
+```
+
+-   kryterium BIC:
+
+```{r}
+selection$cp
+selection$bicmin <- which.min(selection$bic)
+selection$bicmin
+selection$bic[selection$bicmin]
+```
+
+Według kryterium BIC, najlepszy wynik osiągnął podzbiór 8, w którym wykorzystano 8 cech.
+
+```{r}
+plot(selection$bic, xlab = "Liczba zmiennych", ylab = "BIC", col = "green",
+     type = "b", pch = 20)
+points(selection$bicmin, selection$bic[selection$bicmin], col = "red", pch = 9)
+```
+
+-   poprawione R\^2:
+
+```{r}
+selection$adjr2
+selection$adjr2min <- which.max(selection$adjr2)
+selection$adjr2min
+selection$adjr2[selection$adrj2min]
+```
+
+Największą wartość poprawionego R\^2 uzyskał podzbiór 12 zawierający 12 cech.
+
+```{r}
+plot(selection$adjr2, xlab = "Liczba zmiennych", ylab = "adjr2", col = "green",
+     type = "b", pch = 20)
+points(selection$adjr2min, selection$adjr2[selection$adjr2min], col = "red", pch = 9)
+```
+
+### Selekcja krokowa do przodu
+
+```{r}
+selection_fwd <- regsubsets(Life.expectancy ~. -age_group, data = newdata, nvmax = 19, method = "forward")
+selection_fwd <- summary(selection_fwd)
+selection_fwd
+```
+
+Sprawdżmy, które podzbiory są najlepsze według różnych kryteriów:
+
+-   miara Cp:
+
+```{r}
+selection_fwd$cp
+
+selection_fwd$cpmin <- which.min(selection_fwd$cp)
+selection_fwd$cpmin
+
+selection_fwd$cp[selection_fwd$cpmin]
+
+```
+
+Według miary Cp najlepszym podzbiorem jest zbiór 13, gdzie użyte zostało 13 cech.
+
+```{r}
+plot(selection_fwd$cp, xlab = "Liczba zmiennych", ylab = "Cp", col = "green",
+     type = "b", pch = 20)
+points(selection_fwd$cpmin, selection_fwd$cp[selection_fwd$cpmin], col = "red", pch = 9)
+```
+
+-   kryterium BIC:
+
+```{r}
+selection_fwd$bic
+selection_fwd$bicmin <- which.min(selection_fwd$bic)
+selection_fwd$bicmin
+selection_fwd$bic[selection_fwd$bicmin]
+```
+
+Według kryterium BIC, najlepszy wynik osiągnął podzbiór 6, w którym wykorzystano 6 cech.
+
+```{r}
+plot(selection_fwd$bic, xlab = "Liczba zmiennych", ylab = "BIC", col = "green",
+     type = "b", pch = 20)
+points(selection_fwd$bicmin, selection_fwd$bic[selection_fwd$bicmin], col = "red", pch = 9)
+```
+
+-   poprawione R\^2:
+
+```{r}
+selection_fwd$adjr2
+selection_fwd$adjr2min <- which.max(selection_fwd$adjr2)
+selection_fwd$adjr2min
+selection_fwd$adjr2[selection_fwd$adjr2min]
+```
+
+Największą wartość poprawionego R\^2 uzyskał podzbiór 13 zawierający 13 cech.
+
+```{r}
+plot(selection_fwd$adjr2, xlab = "Liczba zmiennych", ylab = "adjr2", col = "green",
+     type = "b", pch = 20)
+points(selection_fwd$adjr2min, selection_fwd$adjr2[selection_fwd$adjr2min], col = "red", pch = 9)
+```
+
+### Selekcja krokowa wstecz
+
+```{r}
+selection_bwd <- regsubsets(Life.expectancy ~. -age_group, data = newdata, nvmax = 19, method = "backward")
+selection_bwd <- summary(selection_bwd)
+selection_bwd
+```
+
+Sprawdżmy, które podzbiory są najlepsze według różnych kryteriów:
+
+-   miara Cp:
+
+```{r}
+selection_bwd$cp
+
+selection_bwd$cpmin <- which.min(selection_bwd$cp)
+selection_bwd$cpmin
+
+selection_bwd$cp[selection_bwd$cpmin]
+
+```
+
+Według miary Cp najlepszym podzbiorem jest zbiór 11, gdzie użyte zostało 11 cech.
+
+```{r}
+plot(selection_bwd$cp, xlab = "Liczba zmiennych", ylab = "Cp", col = "green",
+     type = "b", pch = 20)
+points(selection_bwd$cpmin, selection_bwd$cp[selection_bwd$cpmin], col = "red", pch = 9)
+```
+
+-   kryterium BIC:
+
+```{r}
+selection_bwd$bic
+selection_bwd$bicmin <- which.min(selection_bwd$bic)
+selection_bwd$bicmin
+selection_bwd$bic[selection_bwd$bicmin]
+```
+
+Według kryterium BIC, najlepszy wynik osiągnął podzbiór 6, w którym wykorzystano 6 cech.
+
+```{r}
+plot(selection_bwd$bic, xlab = "Liczba zmiennych", ylab = "BIC", col = "green",
+     type = "b", pch = 20)
+points(selection_bwd$bicmin, selection_bwd$bic[selection_bwd$bicmin], col = "red", pch = 9)
+```
+
+-   poprawione R\^2:
+
+```{r}
+selection_bwd$adjr2
+selection_bwd$adjr2min <- which.max(selection_bwd$adjr2)
+selection_bwd$adjr2min
+selection_bwd$adjr2[selection_bwd$adjr2min]
+```
+
+Największą wartość poprawionego R\^2 uzyskał podzbiór 12 zawierający 12 cech.
+
+```{r}
+plot(selection_bwd$adjr2, xlab = "Liczba zmiennych", ylab = "adjr2", col = "green",
+     type = "b", pch = 20)
+points(selection_bwd$adjr2min, selection_bwd$adjr2[selection_bwd$adjr2min], col = "red", pch = 9)
+```
+
+Według metody exhaustive oraz selekcji wstecz najlepsze możliwe modele się pokrywały. Model selekcji do przodu wskazał podzbiór 13 dwukrotnie jako najlepszy.
+
+### Wybór modelu przy pomocy metody zbioru walidacyjnego
+
+Podział danych na zbiór uczący i testowy, przeprowadzenie selekcji na zbiorze uczącym:
+
+```{r}
+n <- nrow(newdata)
+train <- sample(c(TRUE, FALSE), n, replace = TRUE)
+test <- !train
+selection_v <- regsubsets(Life.expectancy ~ . -age_group, data = newdata[train,], nvmax = 19)
+summary(selection_v)
+```
+
+Tworzenie funkcji predict:
+
+```{r}
+predict.regsubsets <- function(object, newdata, id, ...) {
+  model_formula <- as.formula(object$call[[2]])
+  mat <- model.matrix(model_formula, newdata)
+  coefs <- coef(object, id = id)
+  mat[, names(coefs)] %*% coefs
+}
+```
+
+Błędy predykcji dla zbioru testowego:
+
+```{r}
+prediction_error <- function(i, model, subset) {
+  pred <- predict(model, newdata[subset,], id = i)
+  mean((newdata$Life.expectancy[subset] - pred)^2)
+}
+selection_v$val_errors <- sapply(1:19, prediction_error, model = selection_v, subset = test)
+selection_v$val_errors
+selection_v$best <- which.min(selection_v$val_errors)
+```
+
+Według analizy przy pomocy metody zbioru walidacyjnego najlepszym modelem jest model:
+
+```{r}
+selection_v$best
+```
+
+### Wybór modelu przy pomocy k-krotnej walidacji krzyżowej
+
+```{r}
+k <- 10
+folds <- sample(1:k, n, replace = TRUE)
+val_err <- NULL
+for (j in 1:k) {
+  selection_cross <- regsubsets(Life.expectancy ~ . -age_group, data = newdata[folds != j,], nvmax = 19)
+  selection_cross$err <- sapply(1:19, prediction_error, model = selection_cross, subset = (folds == j))
+  val_err <- rbind(val_err, selection_cross$err)
+}
+```
+
+Wyznaczenie wartości błędów:
+
+```{r}
+selection_cross$cv_errors <- colMeans(val_err)
+selection_cross$cv_errors
+selection_cross$best <- which.min(selection_cross$cv_errors)
+```
+
+Analiza modeli przy pomocy k-krotnej walidacji krzyżowej wskazuje, że najlepszym modelem jest model:
+
+```{r}
+selection_cross$best
+```
+
+### Porównanie wyników metod selekcji cech
+
+```{r}
+selection_tab <- matrix(c(selection$cpmin, selection$bicmin, selection$adjr2min, selection_fwd$cpmin, selection_fwd$bicmin, selection_fwd$adjr2min, selection_bwd$cpmin, selection_bwd$bicmin, selection_bwd$adjr2min, selection_v$best, selection_cross$best), nrow=11,ncol=1)
+colnames(selection_tab) <- c("Ilość predyktorów")
+rownames(selection_tab) <- c('Selekcja Cp', 'Selekcja BIC', 'Selekcja adjr2', 'Selekcja forward Cp', 'Selekcja forward BIC', 'Selekcja forward adjr2', 'Selekcja backward Cp', 'Selekcja backward BIC', 'Selekcja backward adjr2', 'Model walidacyjny', 'k-krotna walidacja krzyżowa')
+
+selection_tab <- as.table(selection_tab)
+selection_tab
+```
+
+## Regularyzacja metodą lasso
+
+### Dla regresji
+
+W celu dokonania regularyzacji metodą lasso należy stworzyć macierz X. Macierz X zostaje podzielona na dwa podzbiory: uczący i testowy. Dane powinny zostać wystandaryzowane.
+
+```{r}
+lasso <-list()
+lasso$X <- model.matrix(Life.expectancy ~ .-(age_group + Status), data = newdata)[, -1]
+lasso$y <- newdata$Life.expectancy
+lasso$X <- scale(lasso$X)
+lasso$y <- scale(lasso$y)
+set.seed(1)
+n <- nrow(lasso$X)
+lasso$train <- sample(n, n / 2)
+lasso$test <- -lasso$train
+```
+
+Dopasowanie lasso dla ustalonej siatki parametrów regularyzacji:
+
+```{r}
+library(glmnet)
+lasso$model <- glmnet(lasso$X[lasso$train,], lasso$y[lasso$train], alpha = 1)
+plot(lasso$model, xvar = "lambda")
+```
+
+```{r}
+lasso$cv_out <- cv.glmnet(lasso$X[lasso$train,], lasso$y[lasso$train], alpha = 1)
+plot(lasso$cv_out)
+lasso$cv_out$lambda.min
+lasso$pred <- predict(lasso$model, s = lasso$cv_out$lambda.min, newx = lasso$X[lasso$test,])
+
+```
+
+```{r}
+mean((lasso$pred - lasso$y[lasso$test])^2)
+```
+
+Lasso dopasowane na zbiorze dla optymalnej wartości lambda daje powyższą wartość MSE.
+
+```{r}
+lasso$model_full <- glmnet(lasso$X, lasso$y, alpha = 1)
+predict(lasso$model_full, s = lasso$cv_out$lambda.min, type = "coefficients")[2:19,]
+```
+
+Dzięki uzyskanym współczynnikom dla optymalnego lambda wiadomo, że predyktor: thinness..1.19.years zostały wykluczone (nie powinien być uwzględniony w modelu).
+
+```{r}
+which.max(predict(lasso$model_full, s = lasso$cv_out$lambda.min, type = "coefficients")[2:19,])
+which.min(predict(lasso$model_full, s = lasso$cv_out$lambda.min, type = "coefficients")[2:19,])
+```
+
+Jednocześnie widać, że predyktorem o największym współczynniku jest Schooling (największa wartość dodatniego współczynnika - korelacja dodatnia z Life.expectancy).
+
+Z kolei najniższy wpółczynnik uzyskał Adult.Mortality (największa wartość ujemnego współczynnika - korelacja ujemna z Life.expectancy).
+
+## Drzewa decyzyjne
+
+Dla zadań klasyfikacji obserwacje zostaną sklasyfikowane do dwóch klas na podstawie długowieczności. Jeśli przewidywany wiek mieścił się w przedziałach 35 - 65 - klasa 0, a 65 - 80+ 1.
+
+```{r}
+Long <- factor(ifelse(newdata$Life.expectancy < 65, 0, 1))
+newdataDecision <- data.frame(newdata, Long)
+```
+
+Zbiory uczący oraz testowy dla zadania klasyfikacji:
+
+```{r}
+set.seed(1)
+n <- nrow(newdataDecision)
+class_train <- sample(n, n / 2)
+class_test <- -class_train
+```
+
+Zbiory uczący oraz testowy dla zadania regresji:
+
+```{r}
+set.seed(1)
+n <- nrow(newdata)
+reg_train <- sample(n, n / 2)
+reg_test <- -reg_train
+```
+
+### Dla klasyfikacji
+
+```{r}
+library(tree)
+tree_model <- tree(Long ~ . - (Life.expectancy + age_group), data = newdataDecision)
+summary(tree_model)
+```
+
+Jak widać w modelu użyto rzeczywiście 7 cech.
+
+```{r}
+plot(tree_model)
+text(tree_model, pretty = 0)
+print(tree_model)
+```
+
+Na podstawie wykresu drzewka decyzyjnego można stwierdzić, że jedną z najważniejszych cech przy podziale gałęzi był Adult.Mortality (pojawia się wielokrotnie oraz na początku drzewa), a także Total.expenditure oraz HIV.AIDS.
+
+Metoda zbioru walidacyjnego pozwala oszacować błąd na poziomie:
+
+```{r}
+set.seed(1)
+tree_model <- tree(Long ~ . -(Life.expectancy + age_group), data = newdataDecision, subset = class_train)
+tree_class <- predict(tree_model, newdata = newdataDecision[class_test,], type = "class")
+table(tree_class, Long[class_test])
+tree_1 <- mean(tree_class != Long[class_test])
+tree_1
+```
+
+Poniżej przedstawiono wizualizację drzewa:
+
+```{r}
+plot(tree_model)
+text(tree_model, pretty = 0)
+```
+
+Następnie skonstruowano ciąg poddrzew w celu sprawdzenia, jak bardzo złożone powinno być drzewo:
+
+```{r}
+set.seed(1)
+tree_cv <- cv.tree(tree_model, FUN = prune.misclass)
+tree_cv
+plot(tree_cv$size, tree_cv$dev, type = "b")
+```
+
+Z wykresu wnioskujemy, że najlepszy wynik osiąga drzewo posiadające 4 liście.
+
+```{r}
+size_opt <- tree_cv$size[which.min(tree_cv$dev)]
+tree_pruned <- prune.misclass(tree_model, best = size_opt)
+plot(tree_pruned)
+text(tree_pruned, pretty = 0)
+```
+
+Drzewo o złożoności 4 liści osiągnęło błąd:
+
+```{r}
+set.seed(1)
+pruned_class <- predict(tree_pruned, newdata = newdataDecision[class_test,], 
+                        type = "class")
+table(pruned_class, newdataDecision$Long[class_test])
+tree_2 <- mean(pruned_class != newdataDecision$Long[class_test])
+tree_2
+```
+
+czyli delikatnie większy błąd niż początkowe drzewo.
+
+### Dla Regresji
+
+```{r}
+tree_model2 <- tree(Life.expectancy ~ . -(age_group), data = newdata)
+summary(tree_model2)
+```
+
+W modelu użyto rzeczywiście 4 cechy.
+
+```{r}
+tree_model2
+plot(tree_model2)
+text(tree_model2)
+```
+
+Dzięki wykresowi drzewka decyzyjnego, można wnioskować, że najważniejszymi predyktorami były Adult.Mortality oraz Income.composition.of.resources.
+
+```{r}
+set.seed(1)
+tree_model2 <- tree(Life.expectancy ~ ., data = newdata, subset = reg_train)
+tree_pred2 <- predict(tree_model2, newdata = newdata[reg_test,])
+tree_3 <-mean((tree_pred2 - newdata$Life.expectancy[reg_test])^2)
+tree_3
+```
+
+Zastosowanie metody zbioruwalidacyjnego dało wynik błędu testowego 16.74.
+
+Aby ustalić optymalny rozmiar drzewa sprawdzamy ciąg poddrzew metodą sterowaną złożonością.
+
+```{r}
+set.seed(1)
+tree_cv2 <- cv.tree(tree_model2)
+plot(tree_cv2$size, tree_cv2$dev, type = "b")
+```
+
+```{r}
+size_opt <- tree_cv2$size[which.min(tree_cv2$dev)]
+size_opt
+```
+
+Optymalnym rozmiarem drzewa wydaje się być 8 liści. Poniżej przedstawiono wykres optymalnego drzewa.
+
+```{r}
+set.seed(1)
+tree_pruned2 <- prune.tree(tree_model2, best = size_opt)
+plot(tree_pruned2)
+text(tree_pruned2)
+```
+
+Dla optymalnego drzewa błąd testowy osiągnał wartość:
+
+```{r}
+tree_pred2 <- predict(tree_pruned2, newdata = newdata[reg_test,])
+tree_4 <-mean((tree_pred2 - newdata$Life.expectancy[reg_test])^2)
+tree_4
+```
+
+## Lasy losowe
+
+### Dla klasyfikacji
+
+Parametr mtry ustawiono na p/3, gdzie p = 19.
+
+```{r}
+library(randomForest)
+set.seed(1)
+p <- 19
+forest <- randomForest(Long ~ . -(Life.expectancy +age_group), data = newdataDecision, subset = class_train, mtry = p/3, importance = TRUE)
+```
+
+Wartość błędu predykcji wynosi:
+
+```{r}
+forest_class <- predict(forest, newdata = newdataDecision[class_test,], type = "class")
+table(forest_class, Long[class_test])
+forest_1 <-mean(forest_class != Long[class_test])
+forest_1
+```
+
+### Dla regresji
+
+Parametr mtry ustawiono na sqrt(p), gdzie p = 19.
+
+```{r}
+set.seed(1)
+p <- 19
+forest2 <- randomForest(Life.expectancy ~ . -Life.expectancy, data = newdata, subset = reg_train, mtry = sqrt(p), importance = TRUE )
+```
+
+Powyższy model dał wynik błędu:
+
+```{r}
+forest_pred <- predict(forest2, newdata = newdata[reg_test,])
+forest_2 <- mean((forest_pred - newdata$Life.expectancy[reg_test])^2)
+forest_2
+```
+
+## Boosting
+
+### Dla klasyfikacji
+
+Do modelu boostingu dla klasyfikacji przkeształcono zmienną Long na zmienną binarną oraz zastosowano rozkład "bernoulli" dla klasyfikacji. Głębokość drzewa ustalono na 5000, a głębokość interakcji na 4.
+
+```{r}
+library(gbm)
+boost <- gbm(I(Long == 1) ~ . - (Life.expectancy + age_group + Status), data = newdataDecision, distribution = 'bernoulli', n.trees = 5000, interaction.depth = 4)
+summary(boost)
+```
+
+Najważniejszymi predyktorami są: Adult.Mortality, HIV.AIDS oraz Income.composition.of.resources. Sprawdzono jak wyglądają wykresy częściowej zależności dla zmiennych Adult.Mortality oraz HIV.AIDS.
+
+```{r}
+plot(boost, i.var = "Adult.Mortality")
+plot(boost, i.var = "HIV.AIDS")
+plot(boost, i.var = c("Adult.Mortality", "HIV.AIDS"))
+```
+
+W celu wyznaczenia błędu testowego zbudowano model przy pomocy funkcji train, a metodą którą wykorzystano był gbm. Parametr spowalniający uczenie ustalono na 0.01.
+
+```{r}
+set.seed(1)
+library(caret)
+boost <- train(Long~.- (Life.expectancy + age_group + Status), data = newdataDecision[class_train,], distribution = "bernoulli",  method = 'gbm',  verbose = F, tuneGrid=data.frame(.n.trees=5000, .shrinkage=0.01, .interaction.depth=4, .n.minobsinnode=1))
+boost
+```
+
+Model trenuje się dłużej niż poprzednie. Obliczenia predykcji dały wynik:
+
+```{r}
+set.seed(1)
+boost_pred <- predict(boost, newdata = newdataDecision[class_test,], n.trees = 5000)
+table(boost_pred, Long[class_test])
+boost_1 <-mean(boost_pred != Long[class_test])
+boost_1
+```
+
+### Dla regresji
+
+Do celów regresji wykorzystano rozkład "gaussian", liczba drzew wyniosła 5000, głębokość interakcji 4, a parametr spowalniający uczenie ustawiono na 0.01.
+
+```{r}
+set.seed(1)
+boost2 <- gbm(Life.expectancy ~ . -(Status + age_group), data = newdata[reg_train,], distribution = "gaussian", n.trees = 5000, interaction.depth = 4, shrinkage = 0.01)
+summary(boost2)
+```
+
+Najbardziej istotnymi predyktorami są HIV.AIDS, Adult.Mortality oraz Income.composition.of.resources.
+
+```{r}
+plot(boost2, i.var = "Adult.Mortality")
+plot(boost2, i.var = "HIV.AIDS")
+plot(boost2, i.var = c("Adult.Mortality", "HIV.AIDS"))
+```
+
+Estymata błędu testowego na zbiorze walidacyjnym wyniosła:
+
+```{r}
+set.seed(1)
+boost_pred2 <- predict(boost2, newdata = newdata[reg_test,], n.trees = 5000)
+boost_2 <- mean((boost_pred2 - newdata$Life.expectancy[reg_test])^2)
+boost_2 
+```
+
+Porównanie wyników algorytmów: drzewa decyzyjnego, lasów losowych oraz boostingu dla problemu klasyfikacji:
+```{r}
+tab3 <- matrix(c(100 -tree_1*100, 100 -tree_2*100, 100 -forest_1*100, 100- boost_1*100), ncol=1, byrow=TRUE)
+colnames(tab3) <- c("Skuteczność predykcji [%]")
+rownames(tab3) <- c('Drzewo decyzyjne', 'Drzewo decyzyjne (size_opt)',  'Lasy losowe',  'Boosting')
+tab3 <- as.table(tab3)
+tab3
+```
+
+
+Porównanie wyników algorytmów: drzewa decyzyjnego, lasów losowych oraz boostingu dla problemu regresji:
+```{r}
+tab4 <- matrix(c( tree_3, tree_4, forest_2, boost_2), ncol=1, byrow=TRUE)
+colnames(tab4) <- c("MSE")
+rownames(tab4) <- c('Drzewo decyzyjne', 'Drzewo decyzyjne (size_opt)', 'Lasy losowe',  'Boosting')
+tab4 <- as.table(tab4)
+tab4
+```
+
+Dla obu problemów najlepsze wyniki osiągnął algorytm lasów losowych, a najgorzej zwykłe drzewo decyzyjne. W przypadku klasyfikacji stworzenie modelu drzewa na podstawie optymalnej wartości parametru głębokości drzewa spowodowało pogorszenie wyników, podczas gdy najlepsza wartość tego parametru pokrywa się z modelem defaultowym.
+
+
+## Podsumowanie
+W powyższym projektcie dokonano szerokiej analizy problemu klasyfikacji oraz regresji dla zbioru dotyczącego oczekiwanej długości życia. Porównano różne metody klasyfikacji, selekcji cech oraz sprawdzono działanie modeli pokrewnych drzewom decyzyjnym. Wyniki zebrane w tabelach porównawczych jeszcze raz zaprezentowano poniżej.
+
+### Porównanie wyników różnych metod klasyfikacji
+```{r}
+tab <- matrix(c(log$acc, log$acc2, lda$acc, lda$acc2, 0, knn$acc1, knn$acc3, knn$acc5, knn$acc7, knn$acc10), ncol=1, byrow=TRUE)
+colnames(tab) <- c("Skuteczność [%]")
+rownames(tab) <- c('Regresja Logistyczna 1', 'Regresja Logistyczna 2', 'LDA 1', 'LDA 2', 'Qda', 'kNN, k = 1', 'kNN, k = 3', 'kNN, k = 5', 'kNN, k = 7','kNN, k = 10')
+tab <- as.table(tab)
+tab
+```
+
+### Porównanie wyników różnych metod selekcji cech
+```{r}
+selection_tab <- matrix(c(selection$cpmin, selection$bicmin, selection$adjr2min, selection_fwd$cpmin, selection_fwd$bicmin, selection_fwd$adjr2min, selection_bwd$cpmin, selection_bwd$bicmin, selection_bwd$adjr2min, selection_v$best, selection_cross$best), nrow=11,ncol=1)
+colnames(selection_tab) <- c("Ilość predyktorów")
+rownames(selection_tab) <- c('Selekcja Cp', 'Selekcja BIC', 'Selekcja adjr2', 'Selekcja forward Cp', 'Selekcja forward BIC', 'Selekcja forward adjr2', 'Selekcja backward Cp', 'Selekcja backward BIC', 'Selekcja backward adjr2', 'Model walidacyjny', 'k-krotna walidacja krzyżowa')
+
+selection_tab <- as.table(selection_tab)
+selection_tab
+```
+
+
+### Porównanie wyników algorytmów: drzewa decyzyjnego, lasów losowych oraz boostingu dla problemu klasyfikacji:
+```{r}
+tab3 <- matrix(c(100 -tree_1*100, 100 -tree_2*100, 100 -forest_1*100, 100- boost_1*100), ncol=1, byrow=TRUE)
+colnames(tab3) <- c("Skuteczność predykcji [%]")
+rownames(tab3) <- c('Drzewo decyzyjne', 'Drzewo decyzyjne (size_opt)',  'Lasy losowe',  'Boosting')
+tab3 <- as.table(tab3)
+tab3
+```
+
+
+### Porównanie wyników algorytmów: drzewa decyzyjnego, lasów losowych oraz boostingu dla problemu regresji:
+```{r}
+tab4 <- matrix(c( tree_3, tree_4, forest_2, boost_2), ncol=1, byrow=TRUE)
+colnames(tab4) <- c("MSE")
+rownames(tab4) <- c('Drzewo decyzyjne', 'Drzewo decyzyjne (size_opt)', 'Lasy losowe',  'Boosting')
+tab4 <- as.table(tab4)
+tab4
+```
